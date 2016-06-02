@@ -3,10 +3,13 @@ package recurrent
 import "time"
 
 type Scheduler struct {
+	// User parameters
 	target   func()
 	interval time.Duration
-	quit     chan bool
-	signal   chan bool
+
+	// Control channels
+	quit   chan bool
+	signal chan bool
 }
 
 // Create a new scheduler which periodically executes the given function.
@@ -76,6 +79,13 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 	return sched
 }
 
+// Run the scheduler. While the scheduler is running, receive a value from either
+// the inteval ticker or the channel "t", which throttles the signal channel with
+// respect to the channel "c". If we read from the interval channel, we send true
+// on the signal channel (or no-op if the channel already has a value). Otherwise
+// we read from the "t" channel and want to acutally execute the target function.
+// In either case, we "reset" the interval ticker by making a new fires-once time
+// channel.
 func (sched *Scheduler) run(c chan bool) {
 	t := throttle(c, sched.signal)
 
@@ -93,6 +103,7 @@ func (sched *Scheduler) run(c chan bool) {
 	}
 }
 
+// Convert a ticker channel to a bool channel.
 func convert(a <-chan time.Time) chan bool {
 	c := make(chan bool)
 
@@ -107,6 +118,8 @@ func convert(a <-chan time.Time) chan bool {
 	return c
 }
 
+// Create a channel which pipes contents from channel "b" but only
+// at the rate of channel "a".
 func throttle(a chan bool, b chan bool) chan bool {
 	c := make(chan bool)
 
