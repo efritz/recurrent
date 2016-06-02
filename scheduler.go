@@ -31,6 +31,7 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 			}
 
 			close(c)
+			close(q)
 		}()
 
 		sched.run(c)
@@ -101,6 +102,8 @@ func (sched *Scheduler) run(c chan bool) {
 			break
 		}
 	}
+
+	close(sched.signal)
 }
 
 // Convert a ticker channel to a bool channel.
