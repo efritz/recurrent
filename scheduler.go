@@ -8,8 +8,8 @@ type Scheduler struct {
 	interval time.Duration
 
 	// Control channels
-	quit   chan bool
-	signal chan bool
+	quit   chan struct{}
+	signal chan struct{}
 }
 
 // Create a new scheduler which periodically executes the given function.
@@ -17,8 +17,8 @@ type Scheduler struct {
 // often as the user likes.
 func NewScheduler(interval time.Duration, target func()) *Scheduler {
 	return newScheduler(interval, target, func(sched *Scheduler) {
-		c := make(chan bool)
-		q := make(chan bool)
+		c := make(chan struct{})
+		q := make(chan struct{})
 
 		go func() {
 			for {
@@ -26,7 +26,7 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 				case <-q:
 					break
 
-				case c <- true:
+				case c <- struct{}{}:
 				}
 			}
 
@@ -35,7 +35,7 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 		}()
 
 		sched.run(c)
-		q <- true
+		q <- struct{}{}
 	})
 }
 
@@ -54,7 +54,7 @@ func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, ta
 
 // Stop the scheduler. No additional signals are meaningful.
 func (sched *Scheduler) Stop() {
-	sched.quit <- true
+	sched.quit <- struct{}{}
 }
 
 // Signal the scheduler to execute the function immediately. This method is
@@ -62,7 +62,7 @@ func (sched *Scheduler) Stop() {
 // throttling signals or not.
 func (sched *Scheduler) Signal() {
 	select {
-	case sched.signal <- true:
+	case sched.signal <- struct{}{}:
 
 	default:
 	}
@@ -72,8 +72,8 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 	sched := &Scheduler{
 		target:   target,
 		interval: interval,
-		quit:     make(chan bool),
-		signal:   make(chan bool, 1),
+		quit:     make(chan struct{}),
+		signal:   make(chan struct{}, 1),
 	}
 
 	go init(sched)
@@ -87,7 +87,7 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 // we read from the "t" channel and want to acutally execute the target function.
 // In either case, we "reset" the interval ticker by making a new fires-once time
 // channel.
-func (sched *Scheduler) run(c chan bool) {
+func (sched *Scheduler) run(c chan struct{}) {
 	t := throttle(c, sched.signal)
 
 	for {
@@ -106,13 +106,13 @@ func (sched *Scheduler) run(c chan bool) {
 	close(sched.signal)
 }
 
-// Convert a ticker channel to a bool channel.
-func convert(a <-chan time.Time) chan bool {
-	c := make(chan bool)
+// Convert a ticker channel to a struct{} channel.
+func convert(a <-chan time.Time) chan struct{} {
+	c := make(chan struct{})
 
 	go func() {
 		for _ = range a {
-			c <- true
+			c <- struct{}{}
 		}
 
 		close(c)
@@ -123,8 +123,8 @@ func convert(a <-chan time.Time) chan bool {
 
 // Create a channel which pipes contents from channel "b" but only
 // at the rate of channel "a".
-func throttle(a chan bool, b chan bool) chan bool {
-	c := make(chan bool)
+func throttle(a chan struct{}, b chan struct{}) chan struct{} {
+	c := make(chan struct{})
 
 	go func() {
 		for _ = range a {
