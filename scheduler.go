@@ -2,6 +2,8 @@ package recurrent
 
 import "time"
 
+// Scheduler is a struct that holds the target function and its schedule
+// configuration.
 type Scheduler struct {
 	// User parameters
 	target   func()
@@ -12,9 +14,9 @@ type Scheduler struct {
 	signal chan struct{}
 }
 
-// Create a new scheduler which periodically executes the given function.
-// This scheduler can be signaled to execute the function immediately as
-// often as the user likes.
+// NewScheduler creates a new scheduler which periodically executes the given
+// function. This scheduler can be signaled to execute the function immediately
+// as often as the user likes.
 func NewScheduler(interval time.Duration, target func()) *Scheduler {
 	return newScheduler(interval, target, func(sched *Scheduler) {
 		c := make(chan struct{})
@@ -41,10 +43,10 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 	})
 }
 
-// Create a new scheduler which periodically executes the given function.
-// The minInterval parameter specifies the frequency at which the signals
-// for immediate execution are allowed. Any additional signals within the
-// interval are ignored.
+// NewThrottledScheduler creates a new scheduler which periodically executes
+// the given function. The minInterval parameter specifies the frequency at
+// which the signals for immediate execution are allowed. Any additional signals
+// within the interval are ignored.
 func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, target func()) *Scheduler {
 	return newScheduler(interval, target, func(sched *Scheduler) {
 		tick := time.NewTicker(minInterval)
@@ -84,8 +86,8 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 
 // Run the scheduler. While the scheduler is running, receive a value from either
 // the inteval ticker or the channel "t", which throttles the signal channel with
-// respect to the channel "c". If we read from the interval channel, we send true
-// on the signal channel (or no-op if the channel already has a value). Otherwise
+// respect to the channel "c". If we read from the interval channel, we write to
+// the signal channel (or no-op if the channel already has a value). Otherwise
 // we read from the "t" channel and want to acutally execute the target function.
 // In either case, we "reset" the interval ticker by making a new fires-once time
 // channel.
