@@ -21,17 +21,19 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 		q := make(chan struct{})
 
 		go func() {
+			defer func() {
+				close(c)
+				close(q)
+			}()
+
 			for {
 				select {
 				case <-q:
-					break
+					return
 
 				case c <- struct{}{}:
 				}
 			}
-
-			close(c)
-			close(q)
 		}()
 
 		sched.run(c)
@@ -90,6 +92,10 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 func (sched *Scheduler) run(c chan struct{}) {
 	t := throttle(c, sched.signal)
 
+	defer func() {
+		close(sched.signal)
+	}()
+
 	for {
 		select {
 		case <-time.After(sched.interval):
@@ -99,11 +105,9 @@ func (sched *Scheduler) run(c chan struct{}) {
 			sched.target()
 
 		case <-sched.quit:
-			break
+			return
 		}
 	}
-
-	close(sched.signal)
 }
 
 // Convert a ticker channel to a struct{} channel.
