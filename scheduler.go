@@ -23,10 +23,8 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 		q := make(chan struct{})
 
 		go func() {
-			defer func() {
-				close(c)
-				close(q)
-			}()
+			defer close(c)
+			defer close(q)
 
 			for {
 				select {
@@ -94,9 +92,7 @@ func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) 
 func (sched *Scheduler) run(c chan struct{}) {
 	t := throttle(c, sched.signal)
 
-	defer func() {
-		close(sched.signal)
-	}()
+	defer close(sched.signal)
 
 	for {
 		select {
