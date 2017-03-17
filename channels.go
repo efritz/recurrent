@@ -29,7 +29,7 @@ func convert(ch1 <-chan time.Time) chan struct{} {
 	go func() {
 		defer close(ch2)
 
-		for _ = range ch1 {
+		for range ch1 {
 			ch2 <- struct{}{}
 		}
 	}()
@@ -45,7 +45,7 @@ func throttle(ch1 chan struct{}, ch2 chan struct{}) chan struct{} {
 	go func() {
 		defer close(ch3)
 
-		for _ = range ch1 {
+		for range ch1 {
 			ch3 <- <-ch2
 		}
 	}()
