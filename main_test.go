@@ -21,3 +21,7 @@ func Test(t *testing.T) {
 		s.RunSuite(t, &SchedulerSuite{})
 	})
 }
+
+func eventually(actual interface{}) GomegaAsyncAssertion {
+	return Eventually(actual, TIMEOUT, INTERVAL)
+}

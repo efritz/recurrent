@@ -22,11 +22,11 @@ func (s *ChannelsSuite) TestConvert(t *testing.T) {
 	}()
 
 	for i := 1; i <= 200; i++ {
-		Eventually(ch2, TIMEOUT, INTERVAL).Should(Receive(Equal(struct{}{})))
+		eventually(ch2).Should(Receive(Equal(struct{}{})))
 	}
 
 	close(ch1)
-	Eventually(ch2, TIMEOUT, INTERVAL).Should(BeClosed())
+	eventually(ch2).Should(BeClosed())
 }
 
 func (s *ChannelsSuite) TestThrottle(t *testing.T) {
@@ -48,7 +48,7 @@ func (s *ChannelsSuite) TestThrottle(t *testing.T) {
 		ch2 <- struct{}{}
 	}()
 
-	Eventually(ch3, TIMEOUT, INTERVAL).Should(Receive(Equal(struct{}{})))
+	eventually(ch3).Should(Receive(Equal(struct{}{})))
 	close(ch1)
-	Eventually(ch3, TIMEOUT, INTERVAL).Should(BeClosed())
+	eventually(ch3).Should(BeClosed())
 }
