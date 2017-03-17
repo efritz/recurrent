@@ -79,9 +79,8 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 		}
 	}()
 
-	// TODO - sync this thing better
 	go func() {
-		for i := 0; i < 40; i++ {
+		for {
 			select {
 			case <-done:
 				return
@@ -169,18 +168,12 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 				<-sync
 			}
 		}
-
-		for i := 0; i < 100; i++ {
-			tickChan <- time.Now()
-			clockChan <- time.Now()
-			<-sync
-		}
 	}()
 
 	scheduler.Start()
 	<-done
 	scheduler.Stop()
-	Expect(attempts).To(Equal(125))
+	Expect(attempts).To(Equal(25))
 }
 
 //
