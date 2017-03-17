@@ -2,106 +2,87 @@ package recurrent
 
 import "time"
 
-// Scheduler is a struct that holds the target function and its schedule
-// configuration.
-type Scheduler struct {
-	// User parameters
-	target   func()
-	interval time.Duration
-	clock    clock
+type (
+	// Scheduler is a struct that holds the target function and its schedule
+	// configuration.
+	Scheduler struct {
+		target   func()
+		interval time.Duration
+		clock    clock
+		withChan func(f func(chan struct{}))
 
-	// Control channels
-	quit   chan struct{}
-	signal chan struct{}
-}
+		// Control channels
+		quit   chan struct{}
+		signal chan struct{}
+	}
+)
 
 // NewScheduler creates a new scheduler which periodically executes the given
 // function. This scheduler can be signaled to execute the function immediately
-// as often as the user likes.
+// as often as the user likes via the Signal method.
 func NewScheduler(interval time.Duration, target func()) *Scheduler {
 	return newSchedulerWithClock(interval, target, &realClock{})
 }
 
 // NewThrottledScheduler creates a new scheduler which periodically executes
 // the given function. The minInterval parameter specifies the frequency at
-// which the signals for immediate execution are allowed. Any additional signals
+// which the signals for immediate execution are allowed. Additional signals
 // within the interval are ignored.
 func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, target func()) *Scheduler {
 	return newThrottledSchedulerWithClock(interval, minInterval, target, &realClock{})
 }
 
 func newSchedulerWithClock(interval time.Duration, target func(), clock clock) *Scheduler {
-	return newScheduler(interval, target, clock, func(sched *Scheduler) {
-		c := make(chan struct{})
-		q := make(chan struct{})
-		defer close(q)
+	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
+		quit := make(chan struct{})
+		defer close(quit)
 
-		go func() {
-			defer close(c)
-
-			for {
-				select {
-				case c <- struct{}{}:
-				case <-q:
-					return
-				}
-			}
-		}()
-
-		// TODO - instead, just return the channel
-		sched.run(c)
+		f(hammer(quit))
 	})
 }
 
 func newThrottledSchedulerWithClock(interval time.Duration, minInterval time.Duration, target func(), clock clock) *Scheduler {
-	return newScheduler(interval, target, clock, func(sched *Scheduler) {
+	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
 		ticker := clock.NewTicker(minInterval)
 		defer ticker.Stop()
 
-		// TODO - instead, just return the channel
-		sched.run(convert(ticker.Chan()))
+		f(convert(ticker.Chan()))
 	})
 }
 
-func newScheduler(interval time.Duration, target func(), clock clock, init func(*Scheduler)) *Scheduler {
-	s := &Scheduler{
+func newScheduler(interval time.Duration, target func(), clock clock, withChan func(f func(chan struct{}))) *Scheduler {
+	return &Scheduler{
 		target:   target,
 		interval: interval,
 		clock:    clock,
+		withChan: withChan,
 		quit:     make(chan struct{}),
-		signal:   make(chan struct{}, 1), // TODO - see if we can not do this
-	}
-
-	go init(s)
-	return s
-}
-
-// Run the scheduler. While the scheduler is running, receive a value from either
-// the inteval ticker or the channel "t", which throttles the signal channel with
-// respect to the channel "c". If we read from the interval channel, we write to
-// the signal channel (or no-op if the channel already has a value). Otherwise
-// we read from the "t" channel and want to acutally execute the target function.
-// In either case, we "reset" the interval ticker by making a new fires-once time
-// channel.
-func (s *Scheduler) run(c chan struct{}) {
-	defer close(s.signal)
-
-	t := throttle(c, s.signal)
-
-	for {
-		select {
-		case <-t:
-			s.target()
-
-		case <-s.clock.After(s.interval):
-			s.Signal()
-
-		case <-s.quit:
-			return
-		}
+		signal:   make(chan struct{}, 1),
 	}
 }
 
+// Start the scheduler in a goroutine.
+func (s *Scheduler) Start() {
+	go func() {
+		defer close(s.signal)
+
+		s.withChan(func(c chan struct{}) {
+			t := throttle(c, s.signal)
+
+			for {
+				select {
+				case <-t:
+					s.target()
+
+				case <-s.clock.After(s.interval):
+					s.Signal()
+
+				case <-s.quit:
+					return
+				}
+			}
+		})
+	}()
 }
 
 // Stop the scheduler. No additional signals are meaningful. This method

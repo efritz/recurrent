@@ -21,7 +21,7 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 	defer close(sync)
 	defer close(clockChan)
 
-	sched := newSchedulerWithClock(
+	scheduler := newSchedulerWithClock(
 		time.Second,
 		func() {
 			attempts++
@@ -39,8 +39,9 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 		}
 	}()
 
+	scheduler.Start()
 	<-done
-	sched.Stop()
+	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
 	Expect(clock.afterArgs[0]).To(Equal(time.Second))
 }
@@ -59,7 +60,7 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 	defer close(sync)
 	defer close(clockChan)
 
-	sched := newThrottledSchedulerWithClock(
+	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
 		time.Millisecond,
 		func() {
@@ -89,8 +90,9 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 		}
 	}()
 
+	scheduler.Start()
 	<-done
-	sched.Stop()
+	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
 	Expect(clock.tickerArgs).To(HaveLen(1))
 	Expect(clock.tickerArgs[0]).To(Equal(time.Millisecond))
@@ -108,7 +110,7 @@ func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 	defer close(sync)
 	defer close(clockChan)
 
-	sched := newSchedulerWithClock(
+	scheduler := newSchedulerWithClock(
 		time.Second,
 		func() {
 			attempts++
@@ -121,13 +123,14 @@ func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			sched.Signal()
+			scheduler.Signal()
 			<-sync
 		}
 	}()
 
+	scheduler.Start()
 	<-done
-	sched.Stop()
+	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
 }
 
@@ -145,7 +148,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 	defer close(sync)
 	defer close(clockChan)
 
-	sched := newThrottledSchedulerWithClock(
+	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
 		time.Millisecond,
 		func() {
@@ -159,7 +162,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 100; i++ {
-			sched.Signal()
+			scheduler.Signal()
 
 			if i%4 == 0 {
 				tickChan <- time.Now()
@@ -174,8 +177,9 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 		}
 	}()
 
+	scheduler.Start()
 	<-done
-	sched.Stop()
+	scheduler.Stop()
 	Expect(attempts).To(Equal(125))
 }
 

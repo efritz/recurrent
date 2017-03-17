@@ -2,6 +2,26 @@ package recurrent
 
 import "time"
 
+// Create a channel that has values pushed to it in a rapid loop
+// until a value is received on the given quit channel.
+func hammer(quit <-chan struct{}) chan struct{} {
+	ch := make(chan struct{})
+
+	go func() {
+		defer close(ch)
+
+		for {
+			select {
+			case ch <- struct{}{}:
+			case <-quit:
+				return
+			}
+		}
+	}()
+
+	return ch
+}
+
 // Convert a ticker channel to a struct{} channel.
 func convert(ch1 <-chan time.Time) chan struct{} {
 	ch2 := make(chan struct{})

@@ -9,6 +9,20 @@ import (
 
 type ChannelsSuite struct{}
 
+func (s *ChannelsSuite) TestHammer(t *testing.T) {
+	var (
+		quit = make(chan struct{})
+		ch   = hammer(quit)
+	)
+
+	for i := 1; i <= 200; i++ {
+		<-ch
+	}
+
+	close(quit)
+	eventually(ch).Should(BeClosed())
+}
+
 func (s *ChannelsSuite) TestConvert(t *testing.T) {
 	var (
 		ch1 = make(chan time.Time)

@@ -11,11 +11,14 @@ Go library for periodically scheduling a task.
 
 First, you must create a scheduler and pass it a reference to the function that should
 execute periodically. It also takes an interval, which is the amount of time that must
-pass before executing the function again. Schedulers will begin executing immediately.
-The scheduler should be stopped (explicitly or by `defer`) to prevent goroutine leaks.
+pass before executing the function again. Schedulers begin once the `Start` method is
+called. A scheduler should be stopped (explicitly or by `defer`) to prevent goroutine 
+leaks.
 
 ```go
 sched := NewScheduler(time.Second * 5, cronTask)
+
+sched.Start()
 defer sched.Stop()
 ```
 
@@ -32,6 +35,8 @@ will be executed at most once per-second, regardless of how many signals are rec
 
 ```go
 sched := NewScheduler(time.Second * 5, time.Second, cronTask)
+
+sched.Start()
 defer sched.Stop()
 
 for {
