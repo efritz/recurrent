@@ -1,109 +1,230 @@
 package recurrent
 
 import (
+	"testing"
 	"time"
 
-	. "gopkg.in/check.v1"
+	. "github.com/onsi/gomega"
 )
 
-const (
-	duration = 64 * time.Millisecond
-)
+type SchedulerSuite struct{}
 
-func (s *RecurrentSuite) TestAutomaticPeriod(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
+	var (
+		attempts  = 0
+		clockChan = make(chan time.Time)
+		clock     = newMockClock(clockChan, nil)
+		sync      = make(chan struct{})
+		done      = make(chan struct{})
+	)
 
-	<-time.After(duration*5 + duration/2)
+	defer close(sync)
+	defer close(clockChan)
+
+	sched := newSchedulerWithClock(
+		time.Second,
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		clock,
+	)
+
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 25; i++ {
+			clockChan <- time.Now()
+			<-sync
+		}
+	}()
+
+	<-done
 	sched.Stop()
-	c.Assert(i, Equals, 5)
+	Expect(attempts).To(Equal(25))
+	Expect(clock.afterArgs[0]).To(Equal(time.Second))
 }
 
-func (s *RecurrentSuite) TestThrottledSchedule(c *C) {
-	i := 0
-	sched := NewThrottledScheduler(duration, duration/4, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
+	var (
+		attempts  = 0
+		tickChan  = make(chan time.Time)
+		ticker    = newMockTicker(tickChan)
+		clockChan = make(chan time.Time)
+		clock     = newMockClock(clockChan, ticker)
+		sync      = make(chan struct{})
+		done      = make(chan struct{})
+	)
 
-	<-time.After(duration*5 + duration/2)
+	defer close(sync)
+	defer close(clockChan)
+
+	sched := newThrottledSchedulerWithClock(
+		time.Second,
+		time.Millisecond,
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		clock,
+	)
+
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 25; i++ {
+			clockChan <- time.Now()
+			<-sync
+		}
+	}()
+
+	// TODO - sync this thing better
+	go func() {
+		for i := 0; i < 40; i++ {
+			select {
+			case <-done:
+				return
+			case tickChan <- time.Now():
+			}
+		}
+	}()
+
+	<-done
 	sched.Stop()
-	c.Assert(i, Equals, 5)
+	Expect(attempts).To(Equal(25))
+	Expect(clock.tickerArgs).To(HaveLen(1))
+	Expect(clock.tickerArgs[0]).To(Equal(time.Millisecond))
 }
 
-func (s *RecurrentSuite) TestExplicitFire(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
+	var (
+		attempts  = 0
+		clockChan = make(chan time.Time)
+		clock     = newMockClock(clockChan, nil)
+		sync      = make(chan struct{})
+		done      = make(chan struct{})
+	)
 
-	for j := 0; j < 25; j++ {
-		sched.Signal()
-		<-time.After(time.Millisecond)
-	}
+	defer close(sync)
+	defer close(clockChan)
 
-	<-time.After(duration*5 + duration/2)
+	sched := newSchedulerWithClock(
+		time.Second,
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		clock,
+	)
+
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 25; i++ {
+			sched.Signal()
+			<-sync
+		}
+	}()
+
+	<-done
 	sched.Stop()
-	c.Assert(i, Equals, 30)
+	Expect(attempts).To(Equal(25))
 }
 
-func (s *RecurrentSuite) TestThrottledExplicitFire(c *C) {
-	i := 0
-	sched := NewThrottledScheduler(duration, duration/4, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
+	var (
+		attempts  = 0
+		tickChan  = make(chan time.Time)
+		ticker    = newMockTicker(tickChan)
+		clockChan = make(chan time.Time)
+		clock     = newMockClock(clockChan, ticker)
+		sync      = make(chan struct{})
+		done      = make(chan struct{})
+	)
 
-	tick := time.NewTicker(duration / 8)
-	defer tick.Stop()
+	defer close(sync)
+	defer close(clockChan)
 
-	j := 0
-	for _ = range tick.C {
-		if j == 100 {
-			break
+	sched := newThrottledSchedulerWithClock(
+		time.Second,
+		time.Millisecond,
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		clock,
+	)
+
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 100; i++ {
+			sched.Signal()
+
+			if i%4 == 0 {
+				tickChan <- time.Now()
+				<-sync
+			}
 		}
 
-		sched.Signal()
-		j++
+		for i := 0; i < 100; i++ {
+			tickChan <- time.Now()
+			clockChan <- time.Now()
+			<-sync
+		}
+	}()
+
+	<-done
+	sched.Stop()
+	Expect(attempts).To(Equal(125))
+}
+
+//
+//
+//
+
+type mockClock struct {
+	ch         <-chan time.Time
+	ticker     ticker
+	afterArgs  []time.Duration
+	tickerArgs []time.Duration
+}
+
+type mockTicker struct {
+	ch      chan time.Time
+	stopped bool
+}
+
+func newMockClock(ch chan time.Time, ticker ticker) *mockClock {
+	return &mockClock{
+		ch:         ch,
+		ticker:     ticker,
+		afterArgs:  []time.Duration{},
+		tickerArgs: []time.Duration{},
 	}
-
-	sched.Stop()
-	c.Assert(i, Equals, 50)
 }
 
-func (s *RecurrentSuite) TestStop(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
-
-	c.Assert(i, Equals, 0)
-	sched.Signal()
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 1)
-	sched.Stop()
-
-	c.Assert(i, Equals, 1)
-	sched.Signal()
-	c.Assert(i, Equals, 1)
+func newMockTicker(ch chan time.Time) *mockTicker {
+	return &mockTicker{
+		ch:      ch,
+		stopped: false,
+	}
 }
 
-func (s *RecurrentSuite) TestSchedulerResetsAutomaticPeriod(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+func (m *mockClock) After(duration time.Duration) <-chan time.Time {
+	m.afterArgs = append(m.afterArgs, duration)
+	return m.ch
+}
 
-	c.Assert(i, Equals, 0)
-	<-time.After(duration * 3 / 4)
-	sched.Signal()
-	<-time.After(duration * 1 / 4)
-	c.Assert(i, Equals, 1)
+func (m *mockClock) NewTicker(duration time.Duration) ticker {
+	m.tickerArgs = append(m.tickerArgs, duration)
+	return m.ticker
+}
 
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 1)
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 2)
+func (m *mockTicker) Chan() <-chan time.Time {
+	return m.ch
+}
 
-	sched.Stop()
+func (m *mockTicker) Stop() {
+	m.stopped = true
 }

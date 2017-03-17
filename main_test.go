@@ -2,13 +2,22 @@ package recurrent
 
 import (
 	"testing"
+	"time"
 
-	. "gopkg.in/check.v1"
+	"github.com/aphistic/sweet"
+	. "github.com/onsi/gomega"
 )
 
-// Hook up gocheck into the "go test" runner.
-func Test(t *testing.T) { TestingT(t) }
+const (
+	TIMEOUT  = time.Millisecond * 1
+	INTERVAL = time.Millisecond / 100
+)
 
-type RecurrentSuite struct{}
+func Test(t *testing.T) {
+	sweet.T(func(s *sweet.S) {
+		RegisterFailHandler(sweet.GomegaFail)
 
-var _ = Suite(&RecurrentSuite{})
+		s.RunSuite(t, &ChannelsSuite{})
+		s.RunSuite(t, &SchedulerSuite{})
+	})
+}
