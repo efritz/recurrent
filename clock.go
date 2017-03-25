@@ -14,7 +14,9 @@ type (
 	}
 
 	realClock  struct{}
-	realTicker struct{ *time.Ticker }
+	realTicker struct {
+		ticker *time.Ticker
+	}
 )
 
 func (rc *realClock) After(duration time.Duration) <-chan time.Time {
@@ -22,13 +24,15 @@ func (rc *realClock) After(duration time.Duration) <-chan time.Time {
 }
 
 func (rc *realClock) NewTicker(duration time.Duration) ticker {
-	return &realTicker{time.NewTicker(duration)}
+	return &realTicker{
+		ticker: time.NewTicker(duration),
+	}
 }
 
 func (rt *realTicker) Chan() <-chan time.Time {
-	return rt.C
+	return rt.ticker.C
 }
 
 func (rt *realTicker) Stop() {
-	rt.Stop()
+	rt.ticker.Stop()
 }
