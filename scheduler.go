@@ -1,6 +1,10 @@
 package recurrent
 
-import "time"
+import (
+	"time"
+
+	"github.com/efritz/glock"
+)
 
 type (
 	// Scheduler is a struct that holds the target function and its schedule
@@ -8,7 +12,7 @@ type (
 	Scheduler struct {
 		target   func()
 		interval time.Duration
-		clock    clock
+		clock    glock.Clock
 		withChan func(f func(chan struct{}))
 
 		// Control channels
@@ -21,7 +25,7 @@ type (
 // function. This scheduler can be signaled to execute the function immediately
 // as often as the user likes via the Signal method.
 func NewScheduler(interval time.Duration, target func()) *Scheduler {
-	return newSchedulerWithClock(interval, target, &realClock{})
+	return newSchedulerWithClock(interval, target, glock.NewRealClock())
 }
 
 // NewThrottledScheduler creates a new scheduler which periodically executes
@@ -29,10 +33,10 @@ func NewScheduler(interval time.Duration, target func()) *Scheduler {
 // which the signals for immediate execution are allowed. Additional signals
 // within the interval are ignored.
 func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, target func()) *Scheduler {
-	return newThrottledSchedulerWithClock(interval, minInterval, target, &realClock{})
+	return newThrottledSchedulerWithClock(interval, minInterval, target, glock.NewRealClock())
 }
 
-func newSchedulerWithClock(interval time.Duration, target func(), clock clock) *Scheduler {
+func newSchedulerWithClock(interval time.Duration, target func(), clock glock.Clock) *Scheduler {
 	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
 		quit := make(chan struct{})
 		defer close(quit)
@@ -41,7 +45,7 @@ func newSchedulerWithClock(interval time.Duration, target func(), clock clock) *
 	})
 }
 
-func newThrottledSchedulerWithClock(interval time.Duration, minInterval time.Duration, target func(), clock clock) *Scheduler {
+func newThrottledSchedulerWithClock(interval time.Duration, minInterval time.Duration, target func(), clock glock.Clock) *Scheduler {
 	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
 		ticker := clock.NewTicker(minInterval)
 		defer ticker.Stop()
@@ -50,7 +54,7 @@ func newThrottledSchedulerWithClock(interval time.Duration, minInterval time.Dur
 	})
 }
 
-func newScheduler(interval time.Duration, target func(), clock clock, withChan func(f func(chan struct{}))) *Scheduler {
+func newScheduler(interval time.Duration, target func(), clock glock.Clock, withChan func(f func(chan struct{}))) *Scheduler {
 	return &Scheduler{
 		target:   target,
 		interval: interval,

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efritz/glock"
 	. "github.com/onsi/gomega"
 )
 
@@ -11,15 +12,15 @@ type SchedulerSuite struct{}
 
 func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 	var (
-		attempts  = 0
-		clockChan = make(chan time.Time)
-		clock     = newMockClock(clockChan, nil)
+		afterChan = make(chan time.Time)
+		clock     = glock.NewMockClockWithAfterChan(afterChan)
 		sync      = make(chan struct{})
 		done      = make(chan struct{})
+		attempts  = 0
 	)
 
 	defer close(sync)
-	defer close(clockChan)
+	defer close(afterChan)
 
 	scheduler := newSchedulerWithClock(
 		time.Second,
@@ -34,7 +35,7 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			clockChan <- time.Now()
+			afterChan <- time.Now()
 			<-sync
 		}
 	}()
@@ -43,22 +44,22 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 	<-done
 	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
-	Expect(clock.afterArgs[0]).To(Equal(time.Second))
+	Expect(clock.GetAfterArgs()[0]).To(Equal(time.Second))
 }
 
 func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 	var (
-		attempts  = 0
-		tickChan  = make(chan time.Time)
-		ticker    = newMockTicker(tickChan)
-		clockChan = make(chan time.Time)
-		clock     = newMockClock(clockChan, ticker)
-		sync      = make(chan struct{})
-		done      = make(chan struct{})
+		afterChan  = make(chan time.Time)
+		tickerChan = make(chan time.Time)
+		clock      = glock.NewMockClockWithAfterChanAndTicker(afterChan, glock.NewMockTicker(tickerChan))
+		sync       = make(chan struct{})
+		done       = make(chan struct{})
+		attempts   = 0
 	)
 
 	defer close(sync)
-	defer close(clockChan)
+	defer close(afterChan)
+	defer close(tickerChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -74,7 +75,7 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			clockChan <- time.Now()
+			afterChan <- time.Now()
 			<-sync
 		}
 	}()
@@ -84,7 +85,7 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 			select {
 			case <-done:
 				return
-			case tickChan <- time.Now():
+			case tickerChan <- time.Now():
 			}
 		}
 	}()
@@ -93,21 +94,23 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 	<-done
 	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
-	Expect(clock.tickerArgs).To(HaveLen(1))
-	Expect(clock.tickerArgs[0]).To(Equal(time.Millisecond))
+
+	tickerArgs := clock.GetTickerArgs()
+	Expect(tickerArgs).To(HaveLen(1))
+	Expect(tickerArgs[0]).To(Equal(time.Millisecond))
 }
 
 func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 	var (
-		attempts  = 0
-		clockChan = make(chan time.Time)
-		clock     = newMockClock(clockChan, nil)
+		afterChan = make(chan time.Time)
+		clock     = glock.NewMockClockWithAfterChan(afterChan)
 		sync      = make(chan struct{})
 		done      = make(chan struct{})
+		attempts  = 0
 	)
 
 	defer close(sync)
-	defer close(clockChan)
+	defer close(afterChan)
 
 	scheduler := newSchedulerWithClock(
 		time.Second,
@@ -135,17 +138,17 @@ func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 
 func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 	var (
-		attempts  = 0
-		tickChan  = make(chan time.Time)
-		ticker    = newMockTicker(tickChan)
-		clockChan = make(chan time.Time)
-		clock     = newMockClock(clockChan, ticker)
-		sync      = make(chan struct{})
-		done      = make(chan struct{})
+		afterChan  = make(chan time.Time)
+		tickerChan = make(chan time.Time)
+		clock      = glock.NewMockClockWithAfterChanAndTicker(afterChan, glock.NewMockTicker(tickerChan))
+		sync       = make(chan struct{})
+		done       = make(chan struct{})
+		attempts   = 0
 	)
 
 	defer close(sync)
-	defer close(clockChan)
+	defer close(afterChan)
+	defer close(tickerChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -164,7 +167,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 			scheduler.Signal()
 
 			if i%4 == 0 {
-				tickChan <- time.Now()
+				tickerChan <- time.Now()
 				<-sync
 			}
 		}
@@ -174,54 +177,4 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 	<-done
 	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
-}
-
-//
-//
-//
-
-type mockClock struct {
-	ch         <-chan time.Time
-	ticker     ticker
-	afterArgs  []time.Duration
-	tickerArgs []time.Duration
-}
-
-type mockTicker struct {
-	ch      chan time.Time
-	stopped bool
-}
-
-func newMockClock(ch chan time.Time, ticker ticker) *mockClock {
-	return &mockClock{
-		ch:         ch,
-		ticker:     ticker,
-		afterArgs:  []time.Duration{},
-		tickerArgs: []time.Duration{},
-	}
-}
-
-func newMockTicker(ch chan time.Time) *mockTicker {
-	return &mockTicker{
-		ch:      ch,
-		stopped: false,
-	}
-}
-
-func (m *mockClock) After(duration time.Duration) <-chan time.Time {
-	m.afterArgs = append(m.afterArgs, duration)
-	return m.ch
-}
-
-func (m *mockClock) NewTicker(duration time.Duration) ticker {
-	m.tickerArgs = append(m.tickerArgs, duration)
-	return m.ticker
-}
-
-func (m *mockTicker) Chan() <-chan time.Time {
-	return m.ch
-}
-
-func (m *mockTicker) Stop() {
-	m.stopped = true
 }
