@@ -59,7 +59,6 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 
 	defer close(sync)
 	defer close(afterChan)
-	defer close(tickerChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -81,6 +80,8 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 	}()
 
 	go func() {
+		defer close(tickerChan)
+
 		for {
 			select {
 			case <-done:
@@ -148,7 +149,6 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 
 	defer close(sync)
 	defer close(afterChan)
-	defer close(tickerChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -162,6 +162,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 
 	go func() {
 		defer close(done)
+		defer close(tickerChan)
 
 		for i := 0; i < 100; i++ {
 			scheduler.Signal()
