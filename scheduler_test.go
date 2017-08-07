@@ -53,8 +53,6 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 		attempts = 0
 	)
 
-	defer close(sync)
-
 	scheduler := NewScheduler(
 		func() {
 			attempts++

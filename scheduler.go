@@ -61,7 +61,9 @@ func NewScheduler(target func(), configs ...SchedulerConfig) Scheduler {
 }
 
 func WithInterval(interval time.Duration) SchedulerConfig {
-	return func(s *scheduler) { s.interval = interval }
+	return func(s *scheduler) {
+		s.interval = interval
+	}
 }
 
 func WithThrottle(minInterval time.Duration) SchedulerConfig {
