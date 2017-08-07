@@ -9,11 +9,9 @@ import (
 	"github.com/efritz/recurrent"
 )
 
-var (
-	target = func() {
-		fmt.Printf("Hello!\n")
-	}
-)
+var target = func() {
+	fmt.Printf("Hello!\n")
+}
 
 func makeSignalChan() chan struct{} {
 	ch := make(chan struct{})
@@ -31,15 +29,22 @@ func makeSignalChan() chan struct{} {
 	return ch
 }
 
-func makeThrottledScheduler() *recurrent.Scheduler {
-	return recurrent.NewThrottledScheduler(time.Second*5, time.Second/2, target)
+func makeThrottledScheduler() recurrent.Scheduler {
+	return recurrent.NewScheduler(
+		target,
+		recurrent.WithInterval(time.Second*5),
+		recurrent.WithThrottle(time.Second/2),
+	)
 }
 
-func makeUnthrottledScheduler() *recurrent.Scheduler {
-	return recurrent.NewScheduler(time.Second, target)
+func makeUnthrottledScheduler() recurrent.Scheduler {
+	return recurrent.NewScheduler(
+		target,
+		recurrent.WithInterval(time.Second),
+	)
 }
 
-func makeScheduler() *recurrent.Scheduler {
+func makeScheduler() recurrent.Scheduler {
 	if os.Getenv("THROTTLED") != "" {
 		return makeThrottledScheduler()
 	}
