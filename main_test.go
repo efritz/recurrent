@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/aphistic/sweet"
-	junit "github.com/aphistic/sweet-junit"
+	"github.com/aphistic/sweet-junit"
 	. "github.com/onsi/gomega"
 )
 
@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 		s.AddSuite(&SchedulerSuite{})
 	})
 }
+
+//
+// Overwrite gomega's default timeout and interval
 
 func eventually(actual interface{}) GomegaAsyncAssertion {
 	return Eventually(actual, TIMEOUT, INTERVAL)

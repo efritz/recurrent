@@ -50,12 +50,7 @@ func (s *ChannelsSuite) TestThrottle(t *testing.T) {
 		ch3 = throttle(ch1, ch2)
 	)
 
-	select {
-	case ch2 <- struct{}{}:
-		t.Errorf("did not expect an active reader")
-	default:
-	}
-
+	Consistently(ch2).ShouldNot(Receive())
 	ch1 <- struct{}{}
 
 	go func() {

@@ -12,15 +12,13 @@ type SchedulerSuite struct{}
 
 func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 	var (
-		afterChan = make(chan time.Time)
-		clock     = glock.NewMockClockWithAfterChan(afterChan)
-		sync      = make(chan struct{})
-		done      = make(chan struct{})
-		attempts  = 0
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
 	)
 
 	defer close(sync)
-	defer close(afterChan)
 
 	scheduler := newSchedulerWithClock(
 		time.Second,
@@ -35,7 +33,7 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			afterChan <- time.Now()
+			clock.BlockingAdvance(time.Second)
 			<-sync
 		}
 	}()
@@ -49,16 +47,13 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 
 func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 	var (
-		afterChan  = make(chan time.Time)
-		tickerChan = make(chan time.Time)
-		clock      = glock.NewMockClockWithAfterChanAndTicker(afterChan, glock.NewMockTicker(tickerChan))
-		sync       = make(chan struct{})
-		done       = make(chan struct{})
-		attempts   = 0
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
 	)
 
 	defer close(sync)
-	defer close(afterChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -74,20 +69,21 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			afterChan <- time.Now()
+			clock.Advance(time.Second)
 			<-sync
 		}
 	}()
 
 	go func() {
-		defer close(tickerChan)
-
 		for {
 			select {
 			case <-done:
 				return
-			case tickerChan <- time.Now():
+
+			default:
 			}
+
+			clock.Advance(time.Second)
 		}
 	}()
 
@@ -103,15 +99,13 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 
 func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 	var (
-		afterChan = make(chan time.Time)
-		clock     = glock.NewMockClockWithAfterChan(afterChan)
-		sync      = make(chan struct{})
-		done      = make(chan struct{})
-		attempts  = 0
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
 	)
 
 	defer close(sync)
-	defer close(afterChan)
 
 	scheduler := newSchedulerWithClock(
 		time.Second,
@@ -139,17 +133,13 @@ func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 
 func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 	var (
-		afterChan  = make(chan time.Time)
-		tickerChan = make(chan time.Time)
-		clock      = glock.NewMockClockWithAfterChanAndTicker(afterChan, glock.NewMockTicker(tickerChan))
-		sync       = make(chan struct{})
-		done       = make(chan struct{})
-		attempts   = 0
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
 	)
 
 	defer close(sync)
-	defer close(afterChan)
-	defer close(tickerChan)
 
 	scheduler := newThrottledSchedulerWithClock(
 		time.Second,
@@ -168,7 +158,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 			scheduler.Signal()
 
 			if i%4 == 0 {
-				tickerChan <- time.Now()
+				clock.Advance(time.Second)
 				<-sync
 			}
 		}
