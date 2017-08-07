@@ -16,7 +16,7 @@ called. A scheduler should be stopped (explicitly or by `defer`) to prevent goro
 leaks.
 
 ```go
-sched := NewScheduler(time.Second * 5, cronTask)
+sched := NewScheduler(cronTask, WithInterval(time.Second * 5))
 
 sched.Start()
 defer sched.Stop()
@@ -34,7 +34,7 @@ explicit signal to execute the function has an effect on the scheduler. The `cro
 will be executed at most once per-second, regardless of how many signals are received.
 
 ```go
-sched := NewScheduler(time.Second * 5, time.Second, cronTask)
+sched := NewScheduler(cronTask, WithInterval(time.Second * 5), WithThrottle(time.Second))
 
 sched.Start()
 defer sched.Stop()

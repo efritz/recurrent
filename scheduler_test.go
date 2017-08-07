@@ -20,13 +20,13 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t *testing.T) {
 
 	defer close(sync)
 
-	scheduler := newSchedulerWithClock(
-		time.Second,
+	scheduler := NewScheduler(
 		func() {
 			attempts++
 			sync <- struct{}{}
 		},
-		clock,
+		WithInterval(time.Second),
+		withClock(clock),
 	)
 
 	go func() {
@@ -55,14 +55,14 @@ func (s *SchedulerSuite) TestThrottledSchedule(t *testing.T) {
 
 	defer close(sync)
 
-	scheduler := newThrottledSchedulerWithClock(
-		time.Second,
-		time.Millisecond,
+	scheduler := NewScheduler(
 		func() {
 			attempts++
 			sync <- struct{}{}
 		},
-		clock,
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		withClock(clock),
 	)
 
 	go func() {
@@ -107,13 +107,13 @@ func (s *SchedulerSuite) TestExplicitFire(t *testing.T) {
 
 	defer close(sync)
 
-	scheduler := newSchedulerWithClock(
-		time.Second,
+	scheduler := NewScheduler(
 		func() {
 			attempts++
 			sync <- struct{}{}
 		},
-		clock,
+		WithInterval(time.Second),
+		withClock(clock),
 	)
 
 	go func() {
@@ -141,14 +141,14 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t *testing.T) {
 
 	defer close(sync)
 
-	scheduler := newThrottledSchedulerWithClock(
-		time.Second,
-		time.Millisecond,
+	scheduler := NewScheduler(
 		func() {
 			attempts++
 			sync <- struct{}{}
 		},
-		clock,
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		withClock(clock),
 	)
 
 	go func() {

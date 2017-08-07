@@ -7,66 +7,79 @@ import (
 )
 
 type (
-	// Scheduler is a struct that holds the target function and its schedule
-	// configuration.
-	Scheduler struct {
+	// Scheduler periodically executes the a target function. A scheduler can
+	// be signaled to execute the function immediately as often as the user likes
+	// via the Signal method (if the scheduler is configured to allow it).
+	Scheduler interface {
+		// Start the scheduler in a goroutine.
+		Start()
+
+		// Stop the scheduler. No additional signals are meaningful. This method
+		// must not be called twice.
+		Stop()
+
+		// Signal the scheduler to execute the function immediately. This method is
+		// always non-blocking, and may be ignored depending on if the scheduler is
+		// throttling signals or not. This method must not be called after Stop.
+		Signal()
+	}
+
+	scheduler struct {
 		target   func()
 		interval time.Duration
 		clock    glock.Clock
 		withChan func(f func(chan struct{}))
-
-		// Control channels
-		quit   chan struct{}
-		signal chan struct{}
+		quit     chan struct{}
+		signal   chan struct{}
 	}
+
+	SchedulerConfig func(*scheduler)
 )
 
-// NewScheduler creates a new scheduler which periodically executes the given
-// function. This scheduler can be signaled to execute the function immediately
-// as often as the user likes via the Signal method.
-func NewScheduler(interval time.Duration, target func()) *Scheduler {
-	return newSchedulerWithClock(interval, target, glock.NewRealClock())
-}
-
-// NewThrottledScheduler creates a new scheduler which periodically executes
-// the given function. The minInterval parameter specifies the frequency at
-// which the signals for immediate execution are allowed. Additional signals
-// within the interval are ignored.
-func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, target func()) *Scheduler {
-	return newThrottledSchedulerWithClock(interval, minInterval, target, glock.NewRealClock())
-}
-
-func newSchedulerWithClock(interval time.Duration, target func(), clock glock.Clock) *Scheduler {
-	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
+func NewScheduler(target func(), configs ...SchedulerConfig) Scheduler {
+	withChan := func(f func(chan struct{})) {
 		quit := make(chan struct{})
 		defer close(quit)
 
 		f(hammer(quit))
-	})
-}
+	}
 
-func newThrottledSchedulerWithClock(interval time.Duration, minInterval time.Duration, target func(), clock glock.Clock) *Scheduler {
-	return newScheduler(interval, target, clock, func(f func(chan struct{})) {
-		ticker := clock.NewTicker(minInterval)
-		defer ticker.Stop()
-
-		f(convert(ticker.Chan()))
-	})
-}
-
-func newScheduler(interval time.Duration, target func(), clock glock.Clock, withChan func(f func(chan struct{}))) *Scheduler {
-	return &Scheduler{
+	scheduler := &scheduler{
 		target:   target,
-		interval: interval,
-		clock:    clock,
+		interval: time.Second,
+		clock:    glock.NewRealClock(),
 		withChan: withChan,
 		quit:     make(chan struct{}),
 		signal:   make(chan struct{}, 1),
 	}
+
+	for _, config := range configs {
+		config(scheduler)
+	}
+
+	return scheduler
 }
 
-// Start the scheduler in a goroutine.
-func (s *Scheduler) Start() {
+func WithInterval(interval time.Duration) SchedulerConfig {
+	return func(s *scheduler) { s.interval = interval }
+}
+
+func WithThrottle(minInterval time.Duration) SchedulerConfig {
+	return func(s *scheduler) {
+		s.withChan = func(f func(chan struct{})) {
+			ticker := s.clock.NewTicker(minInterval)
+			defer ticker.Stop()
+
+			f(convert(ticker.Chan()))
+		}
+	}
+}
+
+func withClock(clock glock.Clock) SchedulerConfig {
+	return func(s *scheduler) { s.clock = clock }
+}
+
+func (s *scheduler) Start() {
 	go func() {
 		defer close(s.signal)
 
@@ -89,16 +102,11 @@ func (s *Scheduler) Start() {
 	}()
 }
 
-// Stop the scheduler. No additional signals are meaningful. This method
-// must not be called twice.
-func (s *Scheduler) Stop() {
+func (s *scheduler) Stop() {
 	close(s.quit)
 }
 
-// Signal the scheduler to execute the function immediately. This method is
-// always non-blocking, and may be ignored depending on if the scheduler is
-// throttling signals or not. This method must not be called after Stop.
-func (s *Scheduler) Signal() {
+func (s *scheduler) Signal() {
 	select {
 	case s.signal <- struct{}{}:
 	default:
