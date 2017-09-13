@@ -183,14 +183,7 @@ func (s *SchedulerSuite) TestThrottle(t sweet.T) {
 		ch2 <- struct{}{}
 	}()
 
-	eventually(ch3).Should(Receive(Equal(struct{}{})))
+	Eventually(ch3).Should(Receive(Equal(struct{}{})))
 	close(ch1)
-	eventually(ch3).Should(BeClosed())
-}
-
-//
-// Overwrite gomega's default timeout and interval
-
-func eventually(actual interface{}) GomegaAsyncAssertion {
-	return Eventually(actual, TIMEOUT, INTERVAL)
+	Eventually(ch3).Should(BeClosed())
 }

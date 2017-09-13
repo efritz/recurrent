@@ -21,7 +21,7 @@ func (s *ChanFactorySuite) TestHammerChanFactory(t sweet.T) {
 	}
 
 	factory.Stop()
-	eventually(ch).Should(BeClosed())
+	Eventually(ch).Should(BeClosed())
 }
 
 func (s *ChanFactorySuite) TestTickerChanFactory(t sweet.T) {
@@ -44,5 +44,5 @@ func (s *ChanFactorySuite) TestTickerChanFactory(t sweet.T) {
 	Consistently(ch).ShouldNot(Receive())
 
 	factory.Stop()
-	eventually(ch).Should(BeClosed())
+	Eventually(ch).Should(BeClosed())
 }
