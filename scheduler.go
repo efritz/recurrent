@@ -28,7 +28,7 @@ type (
 		target   func()
 		interval time.Duration
 		clock    glock.Clock
-		withChan func(f func(chan struct{}))
+		factory  chanFactory
 		quit     chan struct{}
 		signal   chan struct{}
 	}
@@ -39,18 +39,11 @@ type (
 
 // NewScheduler creates a new scheduler that will invoke the target function.
 func NewScheduler(target func(), configs ...ConfigFunc) Scheduler {
-	withChan := func(f func(chan struct{})) {
-		quit := make(chan struct{})
-		defer close(quit)
-
-		f(hammer(quit))
-	}
-
 	scheduler := &scheduler{
 		target:   target,
 		interval: time.Second,
 		clock:    glock.NewRealClock(),
-		withChan: withChan,
+		factory:  newHammerChanFactory(),
 		quit:     make(chan struct{}),
 		signal:   make(chan struct{}, 1),
 	}
@@ -74,12 +67,7 @@ func WithInterval(interval time.Duration) ConfigFunc {
 // scheduled function (there is no default minimum).
 func WithThrottle(minInterval time.Duration) ConfigFunc {
 	return func(s *scheduler) {
-		s.withChan = func(f func(chan struct{})) {
-			ticker := s.clock.NewTicker(minInterval)
-			defer ticker.Stop()
-
-			f(convert(ticker.Chan()))
-		}
+		s.factory = newTickerChanFactory(s.clock.NewTicker(minInterval))
 	}
 }
 
@@ -91,22 +79,23 @@ func (s *scheduler) Start() {
 	go func() {
 		defer close(s.signal)
 
-		s.withChan(func(c chan struct{}) {
-			t := throttle(c, s.signal)
+		ch := s.factory.Chan()
+		defer s.factory.Stop()
 
-			for {
-				select {
-				case <-t:
-					s.target()
+		tick := throttle(ch, s.signal)
 
-				case <-s.clock.After(s.interval):
-					s.Signal()
+		for {
+			select {
+			case <-tick:
+				s.target()
 
-				case <-s.quit:
-					return
-				}
+			case <-s.clock.After(s.interval):
+				s.Signal()
+
+			case <-s.quit:
+				return
 			}
-		})
+		}
 	}()
 }
 
@@ -121,39 +110,7 @@ func (s *scheduler) Signal() {
 	}
 }
 
-func hammer(quit <-chan struct{}) chan struct{} {
-	ch := make(chan struct{})
-
-	go func() {
-		defer close(ch)
-
-		for {
-			select {
-			case ch <- struct{}{}:
-			case <-quit:
-				return
-			}
-		}
-	}()
-
-	return ch
-}
-
-func convert(ch1 <-chan time.Time) chan struct{} {
-	ch2 := make(chan struct{})
-
-	go func() {
-		defer close(ch2)
-
-		for range ch1 {
-			ch2 <- struct{}{}
-		}
-	}()
-
-	return ch2
-}
-
-func throttle(ch1 chan struct{}, ch2 chan struct{}) chan struct{} {
+func throttle(ch1 <-chan struct{}, ch2 <-chan struct{}) <-chan struct{} {
 	ch3 := make(chan struct{})
 
 	go func() {

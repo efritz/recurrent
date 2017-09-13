@@ -20,7 +20,9 @@ func TestMain(m *testing.M) {
 
 	sweet.Run(m, func(s *sweet.S) {
 		s.RegisterPlugin(junit.NewPlugin())
+
 		s.AddSuite(&SchedulerSuite{})
+		s.AddSuite(&ChanFactorySuite{})
 	})
 }
 
@@ -83,19 +85,8 @@ func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
+			clock.BlockingAdvance(time.Second)
 			<-sync
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-
-			clock.Advance(time.Second)
 		}
 	}()
 
@@ -103,10 +94,6 @@ func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 	<-done
 	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
-
-	tickerArgs := clock.GetTickerArgs()
-	Expect(tickerArgs).To(HaveLen(1))
-	Expect(tickerArgs[0]).To(Equal(time.Millisecond))
 }
 
 func (s *SchedulerSuite) TestExplicitFire(t sweet.T) {
@@ -180,40 +167,6 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t sweet.T) {
 	<-done
 	scheduler.Stop()
 	Expect(attempts).To(Equal(25))
-}
-
-func (s *SchedulerSuite) TestHammer(t sweet.T) {
-	var (
-		quit = make(chan struct{})
-		ch   = hammer(quit)
-	)
-
-	for i := 1; i <= 200; i++ {
-		<-ch
-	}
-
-	close(quit)
-	eventually(ch).Should(BeClosed())
-}
-
-func (s *SchedulerSuite) TestConvert(t sweet.T) {
-	var (
-		ch1 = make(chan time.Time)
-		ch2 = convert(ch1)
-	)
-
-	go func() {
-		for i := 1; i <= 200; i++ {
-			ch1 <- time.Now().Add(time.Minute * time.Duration(-i))
-		}
-	}()
-
-	for i := 1; i <= 200; i++ {
-		eventually(ch2).Should(Receive(Equal(struct{}{})))
-	}
-
-	close(ch1)
-	eventually(ch2).Should(BeClosed())
 }
 
 func (s *SchedulerSuite) TestThrottle(t sweet.T) {
