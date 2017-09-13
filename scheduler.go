@@ -120,3 +120,49 @@ func (s *scheduler) Signal() {
 	default:
 	}
 }
+
+func hammer(quit <-chan struct{}) chan struct{} {
+	ch := make(chan struct{})
+
+	go func() {
+		defer close(ch)
+
+		for {
+			select {
+			case ch <- struct{}{}:
+			case <-quit:
+				return
+			}
+		}
+	}()
+
+	return ch
+}
+
+func convert(ch1 <-chan time.Time) chan struct{} {
+	ch2 := make(chan struct{})
+
+	go func() {
+		defer close(ch2)
+
+		for range ch1 {
+			ch2 <- struct{}{}
+		}
+	}()
+
+	return ch2
+}
+
+func throttle(ch1 chan struct{}, ch2 chan struct{}) chan struct{} {
+	ch3 := make(chan struct{})
+
+	go func() {
+		defer close(ch3)
+
+		for range ch1 {
+			ch3 <- <-ch2
+		}
+	}()
+
+	return ch3
+}
