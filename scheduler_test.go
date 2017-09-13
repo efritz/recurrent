@@ -83,7 +83,6 @@ func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 		defer close(done)
 
 		for i := 0; i < 25; i++ {
-			clock.Advance(time.Second)
 			<-sync
 		}
 	}()
@@ -93,7 +92,6 @@ func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 			select {
 			case <-done:
 				return
-
 			default:
 			}
 
@@ -172,7 +170,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t sweet.T) {
 			scheduler.Signal()
 
 			if i%4 == 0 {
-				clock.Advance(time.Second)
+				clock.BlockingAdvance(time.Second)
 				<-sync
 			}
 		}
