@@ -33,10 +33,12 @@ type (
 		signal   chan struct{}
 	}
 
-	SchedulerConfig func(*scheduler)
+	// ConfigFunc is a function used to initialize a new scheduler.
+	ConfigFunc func(*scheduler)
 )
 
-func NewScheduler(target func(), configs ...SchedulerConfig) Scheduler {
+// NewScheduler creates a new scheduler that will invoke the target function.
+func NewScheduler(target func(), configs ...ConfigFunc) Scheduler {
 	withChan := func(f func(chan struct{})) {
 		quit := make(chan struct{})
 		defer close(quit)
@@ -60,13 +62,17 @@ func NewScheduler(target func(), configs ...SchedulerConfig) Scheduler {
 	return scheduler
 }
 
-func WithInterval(interval time.Duration) SchedulerConfig {
+// WithInterval sets the interval at which the scheduler will invoke the
+// scheduled function (default is one second).
+func WithInterval(interval time.Duration) ConfigFunc {
 	return func(s *scheduler) {
 		s.interval = interval
 	}
 }
 
-func WithThrottle(minInterval time.Duration) SchedulerConfig {
+// WithThrottle sets the minimum duration between two invocations of the
+// scheduled function (there is no default minimum).
+func WithThrottle(minInterval time.Duration) ConfigFunc {
 	return func(s *scheduler) {
 		s.withChan = func(f func(chan struct{})) {
 			ticker := s.clock.NewTicker(minInterval)
@@ -77,7 +83,7 @@ func WithThrottle(minInterval time.Duration) SchedulerConfig {
 	}
 }
 
-func withClock(clock glock.Clock) SchedulerConfig {
+func withClock(clock glock.Clock) ConfigFunc {
 	return func(s *scheduler) { s.clock = clock }
 }
 
