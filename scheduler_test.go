@@ -10,11 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const (
-	TIMEOUT  = time.Millisecond * 1
-	INTERVAL = time.Millisecond / 100
-)
-
 func TestMain(m *testing.M) {
 	RegisterFailHandler(sweet.GomegaFail)
 
@@ -186,4 +181,11 @@ func (s *SchedulerSuite) TestThrottle(t sweet.T) {
 	Eventually(ch3).Should(Receive(Equal(struct{}{})))
 	close(ch1)
 	Eventually(ch3).Should(BeClosed())
+}
+
+//
+// Helpers
+
+func withClock(clock glock.Clock) ConfigFunc {
+	return func(s *scheduler) { s.clock = clock }
 }

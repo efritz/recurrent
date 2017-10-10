@@ -71,10 +71,6 @@ func WithThrottle(minInterval time.Duration) ConfigFunc {
 	}
 }
 
-func withClock(clock glock.Clock) ConfigFunc {
-	return func(s *scheduler) { s.clock = clock }
-}
-
 func (s *scheduler) Start() {
 	go func() {
 		defer close(s.signal)

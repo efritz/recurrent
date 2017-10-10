@@ -21,7 +21,10 @@ func makeSignalChan() chan struct{} {
 		reader := bufio.NewReader(os.Stdin)
 
 		for {
-			reader.ReadString('\n')
+			if _, err := reader.ReadString('\n'); err != nil {
+				panic(err.Error())
+			}
+
 			ch <- struct{}{}
 		}
 	}()
