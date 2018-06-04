@@ -1,109 +1,191 @@
 package recurrent
 
 import (
+	"testing"
 	"time"
 
-	. "gopkg.in/check.v1"
+	"github.com/aphistic/sweet"
+	"github.com/aphistic/sweet-junit"
+	"github.com/efritz/glock"
+	. "github.com/onsi/gomega"
 )
 
-const (
-	duration = 64 * time.Millisecond
-)
+func TestMain(m *testing.M) {
+	RegisterFailHandler(sweet.GomegaFail)
 
-func (s *RecurrentSuite) TestAutomaticPeriod(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
+	sweet.Run(m, func(s *sweet.S) {
+		s.RegisterPlugin(junit.NewPlugin())
+
+		s.AddSuite(&SchedulerSuite{})
+		s.AddSuite(&ChanFactorySuite{})
 	})
-
-	<-time.After(duration*5 + duration/2)
-	sched.Stop()
-	c.Assert(i, Equals, 5)
 }
 
-func (s *RecurrentSuite) TestThrottledSchedule(c *C) {
-	i := 0
-	sched := NewThrottledScheduler(duration, duration/4, func() {
-		i++
-	})
+type SchedulerSuite struct{}
 
-	<-time.After(duration*5 + duration/2)
-	sched.Stop()
-	c.Assert(i, Equals, 5)
-}
+func (s *SchedulerSuite) TestAutomaticPeriod(t sweet.T) {
+	var (
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
+	)
 
-func (s *RecurrentSuite) TestExplicitFire(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+	defer close(sync)
 
-	for j := 0; j < 25; j++ {
-		sched.Signal()
-		<-time.After(time.Millisecond)
-	}
+	scheduler := NewScheduler(
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		withClock(clock),
+	)
 
-	<-time.After(duration*5 + duration/2)
-	sched.Stop()
-	c.Assert(i, Equals, 30)
-}
+	go func() {
+		defer close(done)
 
-func (s *RecurrentSuite) TestThrottledExplicitFire(c *C) {
-	i := 0
-	sched := NewThrottledScheduler(duration, duration/4, func() {
-		i++
-	})
-
-	tick := time.NewTicker(duration / 8)
-	defer tick.Stop()
-
-	j := 0
-	for _ = range tick.C {
-		if j == 100 {
-			break
+		for i := 0; i < 25; i++ {
+			clock.BlockingAdvance(time.Second)
+			<-sync
 		}
+	}()
 
-		sched.Signal()
-		j++
-	}
-
-	sched.Stop()
-	c.Assert(i, Equals, 50)
+	scheduler.Start()
+	<-done
+	scheduler.Stop()
+	Expect(attempts).To(Equal(25))
+	Expect(clock.GetAfterArgs()[0]).To(Equal(time.Second))
 }
 
-func (s *RecurrentSuite) TestStop(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
+	var (
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
+	)
 
-	c.Assert(i, Equals, 0)
-	sched.Signal()
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 1)
-	sched.Stop()
+	scheduler := NewScheduler(
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		withClock(clock),
+	)
 
-	c.Assert(i, Equals, 1)
-	sched.Signal()
-	c.Assert(i, Equals, 1)
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 25; i++ {
+			clock.BlockingAdvance(time.Second)
+			<-sync
+		}
+	}()
+
+	scheduler.Start()
+	<-done
+	scheduler.Stop()
+	Expect(attempts).To(Equal(25))
 }
 
-func (s *RecurrentSuite) TestSchedulerResetsAutomaticPeriod(c *C) {
-	i := 0
-	sched := NewScheduler(duration, func() {
-		i++
-	})
+func (s *SchedulerSuite) TestExplicitFire(t sweet.T) {
+	var (
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
+	)
 
-	c.Assert(i, Equals, 0)
-	<-time.After(duration * 3 / 4)
-	sched.Signal()
-	<-time.After(duration * 1 / 4)
-	c.Assert(i, Equals, 1)
+	defer close(sync)
 
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 1)
-	<-time.After(duration / 2)
-	c.Assert(i, Equals, 2)
+	scheduler := NewScheduler(
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		withClock(clock),
+	)
 
-	sched.Stop()
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 25; i++ {
+			scheduler.Signal()
+			<-sync
+		}
+	}()
+
+	scheduler.Start()
+	<-done
+	scheduler.Stop()
+	Expect(attempts).To(Equal(25))
+}
+
+func (s *SchedulerSuite) TestThrottledExplicitFire(t sweet.T) {
+	var (
+		clock    = glock.NewMockClock()
+		sync     = make(chan struct{})
+		done     = make(chan struct{})
+		attempts = 0
+	)
+
+	defer close(sync)
+
+	scheduler := NewScheduler(
+		func() {
+			attempts++
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		withClock(clock),
+	)
+
+	go func() {
+		defer close(done)
+
+		for i := 0; i < 100; i++ {
+			scheduler.Signal()
+
+			if i%4 == 0 {
+				clock.BlockingAdvance(time.Second)
+				<-sync
+			}
+		}
+	}()
+
+	scheduler.Start()
+	<-done
+	scheduler.Stop()
+	Expect(attempts).To(Equal(25))
+}
+
+func (s *SchedulerSuite) TestThrottle(t sweet.T) {
+	var (
+		ch1 = make(chan struct{})
+		ch2 = make(chan struct{})
+		ch3 = throttle(ch1, ch2)
+	)
+
+	Consistently(ch2).ShouldNot(Receive())
+	ch1 <- struct{}{}
+
+	go func() {
+		ch2 <- struct{}{}
+	}()
+
+	Eventually(ch3).Should(Receive(Equal(struct{}{})))
+	close(ch1)
+	Eventually(ch3).Should(BeClosed())
+}
+
+//
+// Helpers
+
+func withClock(clock glock.Clock) ConfigFunc {
+	return func(s *scheduler) { s.clock = clock }
 }

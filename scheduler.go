@@ -1,140 +1,121 @@
 package recurrent
 
-import "time"
+import (
+	"time"
 
-// Scheduler is a struct that holds the target function and its schedule
-// configuration.
-type Scheduler struct {
-	// User parameters
-	target   func()
-	interval time.Duration
+	"github.com/efritz/glock"
+)
 
-	// Control channels
-	quit   chan struct{}
-	signal chan struct{}
-}
+type (
+	// Scheduler periodically executes the a target function. A scheduler can
+	// be signaled to execute the function immediately as often as the user likes
+	// via the Signal method (if the scheduler is configured to allow it).
+	Scheduler interface {
+		// Start the scheduler in a goroutine.
+		Start()
 
-// NewScheduler creates a new scheduler which periodically executes the given
-// function. This scheduler can be signaled to execute the function immediately
-// as often as the user likes.
-func NewScheduler(interval time.Duration, target func()) *Scheduler {
-	return newScheduler(interval, target, func(sched *Scheduler) {
-		c := make(chan struct{})
-		q := make(chan struct{})
+		// Stop the scheduler. No additional signals are meaningful. This method
+		// must not be called twice.
+		Stop()
 
-		go func() {
-			defer close(c)
-			defer close(q)
-
-			for {
-				select {
-				case <-q:
-					return
-
-				case c <- struct{}{}:
-				}
-			}
-		}()
-
-		sched.run(c)
-		q <- struct{}{}
-	})
-}
-
-// NewThrottledScheduler creates a new scheduler which periodically executes
-// the given function. The minInterval parameter specifies the frequency at
-// which the signals for immediate execution are allowed. Any additional signals
-// within the interval are ignored.
-func NewThrottledScheduler(interval time.Duration, minInterval time.Duration, target func()) *Scheduler {
-	return newScheduler(interval, target, func(sched *Scheduler) {
-		tick := time.NewTicker(minInterval)
-		defer tick.Stop()
-
-		sched.run(convert(tick.C))
-	})
-}
-
-// Stop the scheduler. No additional signals are meaningful.
-func (sched *Scheduler) Stop() {
-	sched.quit <- struct{}{}
-}
-
-// Signal the scheduler to execute the function immediately. This method is
-// always non-blocking, and may be ignored depending on if the scheduler is
-// throttling signals or not.
-func (sched *Scheduler) Signal() {
-	select {
-	case sched.signal <- struct{}{}:
-
-	default:
+		// Signal the scheduler to execute the function immediately. This method is
+		// always non-blocking, and may be ignored depending on if the scheduler is
+		// throttling signals or not. This method must not be called after Stop.
+		Signal()
 	}
-}
 
-func newScheduler(interval time.Duration, target func(), init func(*Scheduler)) *Scheduler {
-	sched := &Scheduler{
+	scheduler struct {
+		target   func()
+		interval time.Duration
+		clock    glock.Clock
+		factory  chanFactory
+		quit     chan struct{}
+		signal   chan struct{}
+	}
+
+	// ConfigFunc is a function used to initialize a new scheduler.
+	ConfigFunc func(*scheduler)
+)
+
+// NewScheduler creates a new scheduler that will invoke the target function.
+func NewScheduler(target func(), configs ...ConfigFunc) Scheduler {
+	scheduler := &scheduler{
 		target:   target,
-		interval: interval,
+		interval: time.Second,
+		clock:    glock.NewRealClock(),
+		factory:  newHammerChanFactory(),
 		quit:     make(chan struct{}),
 		signal:   make(chan struct{}, 1),
 	}
 
-	go init(sched)
-	return sched
+	for _, config := range configs {
+		config(scheduler)
+	}
+
+	return scheduler
 }
 
-// Run the scheduler. While the scheduler is running, receive a value from either
-// the inteval ticker or the channel "t", which throttles the signal channel with
-// respect to the channel "c". If we read from the interval channel, we write to
-// the signal channel (or no-op if the channel already has a value). Otherwise
-// we read from the "t" channel and want to acutally execute the target function.
-// In either case, we "reset" the interval ticker by making a new fires-once time
-// channel.
-func (sched *Scheduler) run(c chan struct{}) {
-	t := throttle(c, sched.signal)
-
-	defer close(sched.signal)
-
-	for {
-		select {
-		case <-time.After(sched.interval):
-			sched.Signal()
-
-		case <-t:
-			sched.target()
-
-		case <-sched.quit:
-			return
-		}
+// WithInterval sets the interval at which the scheduler will invoke the
+// scheduled function (default is one second).
+func WithInterval(interval time.Duration) ConfigFunc {
+	return func(s *scheduler) {
+		s.interval = interval
 	}
 }
 
-// Convert a ticker channel to a struct{} channel.
-func convert(a <-chan time.Time) chan struct{} {
-	c := make(chan struct{})
-
-	go func() {
-		for _ = range a {
-			c <- struct{}{}
-		}
-
-		close(c)
-	}()
-
-	return c
+// WithThrottle sets the minimum duration between two invocations of the
+// scheduled function (there is no default minimum).
+func WithThrottle(minInterval time.Duration) ConfigFunc {
+	return func(s *scheduler) {
+		s.factory = newTickerChanFactory(s.clock.NewTicker(minInterval))
+	}
 }
 
-// Create a channel which pipes contents from channel "b" but only
-// at the rate of channel "a".
-func throttle(a chan struct{}, b chan struct{}) chan struct{} {
-	c := make(chan struct{})
+func (s *scheduler) Start() {
+	go func() {
+		defer close(s.signal)
+
+		ch := s.factory.Chan()
+		defer s.factory.Stop()
+
+		tick := throttle(ch, s.signal)
+
+		for {
+			select {
+			case <-tick:
+				s.target()
+
+			case <-s.clock.After(s.interval):
+				s.Signal()
+
+			case <-s.quit:
+				return
+			}
+		}
+	}()
+}
+
+func (s *scheduler) Stop() {
+	close(s.quit)
+}
+
+func (s *scheduler) Signal() {
+	select {
+	case s.signal <- struct{}{}:
+	default:
+	}
+}
+
+func throttle(ch1 <-chan struct{}, ch2 <-chan struct{}) <-chan struct{} {
+	ch3 := make(chan struct{})
 
 	go func() {
-		for _ = range a {
-			c <- <-b
-		}
+		defer close(ch3)
 
-		close(c)
+		for range ch1 {
+			ch3 <- <-ch2
+		}
 	}()
 
-	return c
+	return ch3
 }
