@@ -2,7 +2,8 @@
 
 [![GoDoc](https://godoc.org/github.com/efritz/recurrent?status.svg)](https://godoc.org/github.com/efritz/recurrent)
 [![Build Status](https://secure.travis-ci.org/efritz/recurrent.png)](http://travis-ci.org/efritz/recurrent)
-[![codecov.io](http://codecov.io/github/efritz/recurrent/coverage.svg?branch=master)](http://codecov.io/github/efritz/recurrent?branch=master)
+[![Maintainability](https://api.codeclimate.com/v1/badges/0ad38bd1583c57173ebb/maintainability)](https://codeclimate.com/github/efritz/recurrent/maintainability)
+[![Test Coverage](https://api.codeclimate.com/v1/badges/0ad38bd1583c57173ebb/test_coverage)](https://codeclimate.com/github/efritz/recurrent/test_coverage)
 
 Go library for periodically scheduling a task.
 
