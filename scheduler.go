@@ -71,6 +71,13 @@ func WithThrottle(minInterval time.Duration) ConfigFunc {
 	}
 }
 
+// WithClock sets the clock used by the scheduler (useful for testing).
+func WithClock(clock glock.Clock) ConfigFunc {
+	return func(s *scheduler) {
+		s.clock = clock
+	}
+}
+
 func (s *scheduler) Start() {
 	go func() {
 		defer close(s.signal)

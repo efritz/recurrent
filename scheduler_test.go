@@ -39,7 +39,7 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t sweet.T) {
 			sync <- struct{}{}
 		},
 		WithInterval(time.Second),
-		withClock(clock),
+		WithClock(clock),
 	)
 
 	go func() {
@@ -73,7 +73,7 @@ func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 		},
 		WithInterval(time.Second),
 		WithThrottle(time.Millisecond),
-		withClock(clock),
+		WithClock(clock),
 	)
 
 	go func() {
@@ -107,7 +107,7 @@ func (s *SchedulerSuite) TestExplicitFire(t sweet.T) {
 			sync <- struct{}{}
 		},
 		WithInterval(time.Second),
-		withClock(clock),
+		WithClock(clock),
 	)
 
 	go func() {
@@ -142,7 +142,7 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t sweet.T) {
 		},
 		WithInterval(time.Second),
 		WithThrottle(time.Millisecond),
-		withClock(clock),
+		WithClock(clock),
 	)
 
 	go func() {
@@ -181,11 +181,4 @@ func (s *SchedulerSuite) TestThrottle(t sweet.T) {
 	Eventually(ch3).Should(Receive(Equal(struct{}{})))
 	close(ch1)
 	Eventually(ch3).Should(BeClosed())
-}
-
-//
-// Helpers
-
-func withClock(clock glock.Clock) ConfigFunc {
-	return func(s *scheduler) { s.clock = clock }
 }
