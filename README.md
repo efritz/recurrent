@@ -22,6 +22,13 @@ sched.Start()
 defer sched.Stop()
 ```
 
+The timeout can be reset so that the wrapped function is not called until `interval`
+has elapsed from the current time.
+
+```go
+sched.Reset()
+```
+
 The function can be executed on-demand from within the scheduler by sending it a signal
 to execute. This call is always non-blocking.
 
@@ -34,7 +41,11 @@ explicit signal to execute the function has an effect on the scheduler. The `cro
 will be executed at most once per-second, regardless of how many signals are received.
 
 ```go
-sched := NewScheduler(cronTask, WithInterval(time.Second * 5), WithThrottle(time.Second))
+sched := NewScheduler(
+    cronTask,
+    WithInterval(time.Second * 5),
+    WithThrottle(time.Second),
+)
 
 sched.Start()
 defer sched.Stop()

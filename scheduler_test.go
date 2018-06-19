@@ -164,6 +164,78 @@ func (s *SchedulerSuite) TestThrottledExplicitFire(t sweet.T) {
 	Expect(attempts).To(Equal(25))
 }
 
+func (s *SchedulerSuite) TestReset(t sweet.T) {
+	var (
+		clock = glock.NewMockClock()
+		sync  = make(chan struct{})
+	)
+
+	defer close(sync)
+
+	scheduler := NewScheduler(
+		func() {
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		WithClock(clock),
+	)
+
+	scheduler.Start()
+	defer scheduler.Stop()
+
+	// First signal
+	Eventually(sync).Should(Receive())
+	Consistently(sync).ShouldNot(Receive())
+
+	// After timeout
+	clock.Advance(time.Second)
+	Eventually(sync).Should(Receive())
+	Consistently(sync).ShouldNot(Receive())
+
+	// Half timeout, then reset
+	clock.Advance(time.Second / 2)
+	scheduler.Reset()
+	Consistently(sync).ShouldNot(Receive())
+
+	// Half timeout, nothing, full timeout signals
+	clock.Advance(time.Second / 2)
+	Consistently(sync).ShouldNot(Receive())
+	clock.Advance(time.Second / 2)
+	Eventually(sync).Should(Receive())
+	Consistently(sync).ShouldNot(Receive())
+}
+
+func (s *SchedulerSuite) TestSkipFirstInvocation(t sweet.T) {
+	var (
+		clock = glock.NewMockClock()
+		sync  = make(chan struct{})
+	)
+
+	defer close(sync)
+
+	scheduler := NewScheduler(
+		func() {
+			sync <- struct{}{}
+		},
+		WithInterval(time.Second),
+		WithThrottle(time.Millisecond),
+		WithClock(clock),
+		WithSkipFirstInvocation(),
+	)
+
+	scheduler.Start()
+	defer scheduler.Stop()
+
+	// No first invocation
+	Consistently(sync).ShouldNot(Receive())
+
+	// Full timeout
+	clock.Advance(time.Second)
+	Eventually(sync).Should(Receive())
+	Consistently(sync).ShouldNot(Receive())
+}
+
 func (s *SchedulerSuite) TestThrottle(t sweet.T) {
 	var (
 		ch1 = make(chan struct{})

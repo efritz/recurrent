@@ -1,6 +1,7 @@
 package recurrent
 
 import (
+	"sync"
 	"time"
 
 	"github.com/efritz/glock"
@@ -14,23 +15,31 @@ type (
 		// Start the scheduler in a goroutine.
 		Start()
 
-		// Stop the scheduler. No additional signals are meaningful. This method
-		// must not be called twice.
+		// Stop the scheduler.
 		Stop()
 
 		// Signal the scheduler to execute the function immediately. This method is
 		// always non-blocking, and may be ignored depending on if the scheduler is
-		// throttling signals or not. This method must not be called after Stop.
+		// throttling signals or not. This method must only be called while the
+		// scheduler is active.
 		Signal()
+
+		// Reset the interval timer in the scheduler. This method must only be called
+		// while the scheduler is active.
+		Reset()
 	}
 
 	scheduler struct {
-		target   func()
-		interval time.Duration
-		clock    glock.Clock
-		factory  chanFactory
-		quit     chan struct{}
-		signal   chan struct{}
+		target    func()
+		interval  time.Duration
+		clock     glock.Clock
+		factory   chanFactory
+		skipFirst bool
+		quit      chan struct{}
+		signal    chan struct{}
+		reset     chan struct{}
+		wg        sync.WaitGroup
+		once      *sync.Once
 	}
 
 	// ConfigFunc is a function used to initialize a new scheduler.
@@ -40,12 +49,15 @@ type (
 // NewScheduler creates a new scheduler that will invoke the target function.
 func NewScheduler(target func(), configs ...ConfigFunc) Scheduler {
 	scheduler := &scheduler{
-		target:   target,
-		interval: time.Second,
-		clock:    glock.NewRealClock(),
-		factory:  newHammerChanFactory(),
-		quit:     make(chan struct{}),
-		signal:   make(chan struct{}, 1),
+		target:    target,
+		interval:  time.Second,
+		skipFirst: false,
+		clock:     glock.NewRealClock(),
+		factory:   newHammerChanFactory(),
+		quit:      make(chan struct{}),
+		signal:    make(chan struct{}, 1),
+		reset:     make(chan struct{}),
+		once:      &sync.Once{},
 	}
 
 	for _, config := range configs {
@@ -78,9 +90,37 @@ func WithClock(clock glock.Clock) ConfigFunc {
 	}
 }
 
+// WithSkipFirstInvocation will flag the first invocation (immediately after
+// Start is called) to be skipped. The first invocation will be after the
+// first call to Signal, Reset, or after the initial timeout period elapses.
+func WithSkipFirstInvocation() ConfigFunc {
+	return func(s *scheduler) {
+		s.skipFirst = true
+	}
+}
+
 func (s *scheduler) Start() {
+	s.wg.Add(2)
+
 	go func() {
-		defer close(s.signal)
+		defer s.wg.Done()
+
+		for {
+			select {
+			case <-s.clock.After(s.interval):
+				s.Signal()
+
+			case <-s.reset:
+				continue
+
+			case <-s.quit:
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer s.wg.Done()
 
 		ch := s.factory.Chan()
 		defer s.factory.Stop()
@@ -92,18 +132,24 @@ func (s *scheduler) Start() {
 			case <-tick:
 				s.target()
 
-			case <-s.clock.After(s.interval):
-				s.Signal()
-
 			case <-s.quit:
 				return
 			}
 		}
 	}()
+
+	if !s.skipFirst {
+		s.Signal()
+	}
 }
 
 func (s *scheduler) Stop() {
-	close(s.quit)
+	s.once.Do(func() {
+		close(s.quit)
+		s.wg.Wait()
+		close(s.signal)
+		close(s.reset)
+	})
 }
 
 func (s *scheduler) Signal() {
@@ -111,6 +157,10 @@ func (s *scheduler) Signal() {
 	case s.signal <- struct{}{}:
 	default:
 	}
+}
+
+func (s *scheduler) Reset() {
+	s.reset <- struct{}{}
 }
 
 func throttle(ch1 <-chan struct{}, ch2 <-chan struct{}) <-chan struct{} {
