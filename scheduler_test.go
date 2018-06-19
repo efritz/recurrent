@@ -58,6 +58,35 @@ func (s *SchedulerSuite) TestAutomaticPeriod(t sweet.T) {
 	Expect(clock.GetAfterArgs()[0]).To(Equal(time.Second))
 }
 
+func (s *SchedulerSuite) TestZeroInterval(t sweet.T) {
+	var (
+		clock = glock.NewMockClock()
+		sync  = make(chan struct{})
+	)
+
+	defer close(sync)
+
+	scheduler := NewScheduler(
+		func() {
+			sync <- struct{}{}
+		},
+		WithInterval(0),
+		WithClock(clock),
+		WithSkipFirstInvocation(),
+	)
+
+	scheduler.Start()
+	defer scheduler.Stop()
+
+	for i := 0; i < 10; i++ {
+		clock.Advance(time.Second)
+		Consistently(sync).ShouldNot(Receive())
+	}
+
+	scheduler.Signal()
+	Eventually(sync).Should(Receive())
+}
+
 func (s *SchedulerSuite) TestThrottledSchedule(t sweet.T) {
 	var (
 		clock    = glock.NewMockClock()

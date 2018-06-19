@@ -68,7 +68,9 @@ func NewScheduler(target func(), configs ...ConfigFunc) Scheduler {
 }
 
 // WithInterval sets the interval at which the scheduler will invoke the
-// scheduled function (default is one second).
+// scheduled function (default is one second). An interval of zero means
+// no scheduled interval and the wrapped function will be invoked only by
+// a call to Signal.
 func WithInterval(interval time.Duration) ConfigFunc {
 	return func(s *scheduler) {
 		s.interval = interval
@@ -102,45 +104,56 @@ func WithSkipFirstInvocation() ConfigFunc {
 func (s *scheduler) Start() {
 	s.wg.Add(2)
 
-	go func() {
-		defer s.wg.Done()
-
-		for {
-			select {
-			case <-s.clock.After(s.interval):
-				s.Signal()
-
-			case <-s.reset:
-				continue
-
-			case <-s.quit:
-				return
-			}
-		}
-	}()
-
-	go func() {
-		defer s.wg.Done()
-
-		ch := s.factory.Chan()
-		defer s.factory.Stop()
-
-		tick := throttle(ch, s.signal)
-
-		for {
-			select {
-			case <-tick:
-				s.target()
-
-			case <-s.quit:
-				return
-			}
-		}
-	}()
+	go s.startTimer()
+	go s.startTicker()
 
 	if !s.skipFirst {
 		s.Signal()
 	}
+}
+
+func (s *scheduler) startTimer() {
+	defer s.wg.Done()
+
+	for {
+		select {
+		case <-s.after():
+			s.Signal()
+
+		case <-s.reset:
+			continue
+
+		case <-s.quit:
+			return
+		}
+	}
+}
+
+func (s *scheduler) startTicker() {
+	defer s.wg.Done()
+
+	ch := s.factory.Chan()
+	defer s.factory.Stop()
+
+	tick := throttle(ch, s.signal)
+
+	for {
+		select {
+		case <-tick:
+			s.target()
+
+		case <-s.quit:
+			return
+		}
+	}
+}
+
+func (s *scheduler) after() <-chan time.Time {
+	if s.interval == 0 {
+		return nil
+	}
+
+	return s.clock.After(s.interval)
 }
 
 func (s *scheduler) Stop() {
