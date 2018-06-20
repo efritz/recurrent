@@ -159,9 +159,12 @@ func (s *scheduler) after() <-chan time.Time {
 func (s *scheduler) Stop() {
 	s.once.Do(func() {
 		close(s.quit)
-		s.wg.Wait()
-		close(s.signal)
-		close(s.reset)
+
+		go func() {
+			defer close(s.signal)
+			defer close(s.reset)
+			s.wg.Wait()
+		}()
 	})
 }
 
